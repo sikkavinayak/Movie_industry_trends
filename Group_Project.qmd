@@ -1,0 +1,337 @@
+---
+title: "Exploring Movie Industry Trends: An In-Depth Data Analysis"
+date: "Dec 15, 2024"
+author: "Vinayak Sikka"
+format: 
+    html:
+      include-before: |
+          <style>
+               body {
+                  background-color: #E8E1E4; 
+                     }
+
+                h1, h2, h3, h4, h5, h6 {
+                      color: #000000; 
+                      
+                     }
+        
+          </style>
+      toc: true
+      toc_float: true
+      
+      toc-location: left
+      mainfont: Arial
+      
+      embed-resources: true
+      
+execute:
+    echo: false
+    error: false
+    warning: false
+---
+
+```{r setup, include = FALSE }
+knitr::opts_chunk$set(echo = TRUE, error = TRUE, warning = FALSE)
+```
+
+
+## Introduction
+
+In this project, we delve into the diverse world of cinema, exploring a rich dataset of movies to uncover patterns and trends that shape the film industry. Our analysis aims to reveal insights into genre popularity, financial aspects such as budgets and revenues, and the critical reception of films over time. By examining these elements, we seek to understand the dynamics that contribute to a movie's success and the evolving preferences of audiences worldwide. This exploration not only provides a snapshot of the current cinematic landscape but also offers a lens through which we can predict future trends.
+
+## Description of the problem
+
+My investigation centers on unraveling key questions within the movie industry, guided by the comprehensive movies dataset at our disposal. Specifically, we aim to address the following problems:
+
+Genre Trends: What genres are currently dominating the film industry in terms of quantity and audience preference? By identifying the most popular genres, we can gauge shifts in audience tastes over time and predict future trends.
+
+Box Office Success: What factors contribute to a movie's financial success? We seek to explore the relationship between a film's budget, its genre, and its revenue to understand what drives box office success.
+
+Critical Reception vs. Financial Performance: How does a movie's critical reception relate to its financial performance? This analysis will help us determine if critically acclaimed movies tend to perform better financially or if there's a disconnect between critics' ratings and box office revenue.
+
+Temporal Dynamics: How have the trends in movie genres, budgets, and revenues evolved over the years? By examining these elements over time, we aim to uncover the evolution of the film industry and predict where it might be headed.
+
+Through addressing these questions, we not only aim to provide a thorough analysis of the current state of the movie industry but also offer insights that could inform producers, directors, and marketers in their future projects. This project seeks to bridge the gap between cinematic art and its commercial success, offering a data-driven perspective on what makes a movie resonate with audiences and thrive financially.
+
+
+## Exploratory Data Analysis
+
+
+
+::: {.column width="100%"}
+```{r}
+#| echo: false
+#load necessary libraries
+
+#install.packages("naniar")
+#install.packages("ggthemes")
+#install.packages("plotly")
+
+#install.packages("reshape2")
+
+library(tidyverse)
+library(lubridate)
+library(readxl)
+library(dplyr)
+library(knitr)
+library(janitor)
+library(gt)
+library(DT)
+library(RSQLite)
+library(dataMaid)
+library(naniar)
+library(ggthemes)
+library(plotly)
+library(reshape2)
+library(ggplot2)
+library(scales)
+
+# Load the dataset
+
+Movies <- read_csv("movies.csv")
+
+
+#Top 10 Movies based on the score
+
+Movies %>% 
+  arrange(desc(score)) %>%  
+  head(10) %>%               
+  kable() 
+
+# Checking for missing values
+
+sum(is.na(Movies))
+
+# Convert all column names to uppercase
+
+colnames(Movies) <- toupper(colnames(Movies))
+
+Movies <- Movies %>%
+  rename(
+    IMDB_RATING = SCORE,
+  )
+
+# Basic statistical analysis for numerical columns
+
+Movies %>% summarise(across(where(is.numeric), list(mean = ~mean(., na.rm = TRUE), sd = ~sd(., na.rm = TRUE)))) %>%
+  kable()
+
+top_movies <- Movies %>%
+  filter(IMDB_RATING >= 7) %>%
+  arrange(desc(IMDB_RATING))
+
+
+# If you want to limit the results to, say, the top 10 movies
+top_10_movies <- head(top_movies, 10)
+
+gt(top_10_movies)
+
+# Filter movies with a score of 7 or more and count movies by director
+
+top_director <- Movies %>%
+  filter(IMDB_RATING >= 7) %>%
+  group_by(DIRECTOR) %>%
+  summarise(Count = n()) %>%
+  arrange(desc(Count)) %>%
+  head(1)
+
+top_director_table <- gt(top_director) %>%
+  tab_header(
+    title = "Top Director by Movies with High Scores",
+    subtitle = "Directors with the most movies scoring 7 or more"
+  )
+
+top_director_table
+
+```
+:::
+
+## Data Visualization
+
+::: {.column width="100%"}
+```{r}
+#| echo: false
+
+# Counting genres
+
+Movies %>%
+  separate_rows(GENRE, sep = ",") %>%
+  count(GENRE, sort = TRUE) %>%
+  ggplot(aes(x = fct_reorder(GENRE, n), y = n)) +
+  geom_bar(stat = "identity") +
+  coord_flip() +
+  labs(title = "Movies Count by Genre", x = "Genre", y = "Count")
+
+# Correlation Analysis
+
+numeric_data <- Movies %>% select(where(is.numeric))
+
+# Calculate the correlation matrix
+correlation_matrix <- cor(numeric_data, use = "complete.obs")
+
+melted_correlation_matrix <- melt(correlation_matrix)
+
+ggplot(melted_correlation_matrix, aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1))
+
+
+
+# Temporal Analysis 
+
+
+#Movies <- Movies %>% select(-date_parsed)
+#Movies <- Movies %>% select(-DATE_PARSED)
+#Movies <- Movies %>% select(-year)
+
+
+Movies <- Movies %>%
+  mutate(
+    # Attempt to parse the date with the specified format
+    DATE_PARSED = parse_date_time(RELEASED, orders = "m d, Y"),
+    # Extract the year from the successfully parsed date
+    year = year(DATE_PARSED)
+  )
+
+view(Movies)
+
+Movies %>%
+  filter(!is.na(YEAR)) %>%  
+  group_by(YEAR) %>%
+  summarise(avg_budget = mean(BUDGET, na.rm = TRUE) / 1e+06) %>%  # Normalizing budget to millions
+  ggplot(aes(x = YEAR, y = avg_budget)) + 
+    geom_line(color = "red") +
+    scale_y_continuous(labels = scales::comma) +  # Formats the y-axis labels
+    labs(y = "Average Budget (millions)", title = "Average Movie Budget Over Time")  
+
+#Count of movie ratings
+
+Movies <- Movies %>%
+  mutate(RATING = factor(RATING, levels = names(sort(table(RATING), decreasing = TRUE))))
+
+# Create the ggplot
+
+ggplot(Movies, aes(y = RATING)) +
+  geom_bar(aes(fill = RATING)) + 
+  geom_text(stat = 'count', aes(label = ..count.., x = ..count..), hjust = -0.1) + 
+  scale_fill_viridis_d() + 
+  theme_minimal() + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        legend.title = element_blank()) + 
+  labs(title = "Plot for Movie Ratings",
+       x = "Count",
+       y = "Rating")
+
+# Genre score visualized
+
+movies_expanded <- Movies %>%
+  separate_rows(GENRE, sep = ",") %>%
+  group_by(GENRE) %>%
+  summarise(average_score = mean(IMDB_RATING, na.rm = TRUE)) %>%
+  ungroup() %>%
+  arrange(desc(average_score))
+
+# Plotting the average score for each genre with a single color
+ggplot(movies_expanded, aes(x = reorder(GENRE, average_score), y = average_score)) +
+  geom_col(fill = "darkgreen") +  # Use a single color for all bars
+  coord_flip() +  # Flips the axes for better readability
+  theme_minimal() +
+  labs(title = "Average Score by Genre", x = "Genre", y = "Average Score")
+
+```
+:::
+
+
+# Principal Findings
+
+
+
+## Temporal Trends in Movie Production and Budgets:
+
+- We observed how the number of movies produced and their average budgets have changed over the years.
+The analysis revealed an increasing trend in the average movie budget over time, indicating that the film industry is investing more into movie production as years progress.
+The count of movies produced each year remained relatively stable, with some minor fluctuations, suggesting a consistent production rate.
+
+## Movie Ratings Distribution:
+
+- A count plot was created to show the distribution of movies across different ratings categories (e.g., R, PG, etc.).
+This visualization helped to understand which ratings are more common in the dataset, possibly reflecting the market's content preferences or production trends toward certain rating categories.
+
+## Genre Popularity and Scores:
+
+- The analysis also intended to explore which genres were most prevalent and how genres related to movie scores.
+By calculating the average score per genre, it provided insights into which genres are generally more critically acclaimed or preferred by audiences.
+
+## Directorial Impact:
+
+- We identified which director(s) have the most movies scoring 7 or above, shedding light on the most prolific and potentially successful directors within the scope of the dataset.
+
+The purpose of this exploratory data analysis (EDA) was to use statistical methods and visualizations to gain an understanding of the patterns and trends in the movie industry as reflected in the dataset. It aimed to support decision-making for stakeholders such as producers, directors, and marketers by providing data-driven insights into what types of movies are produced, how budgets are allocated, and which movies tend to be more successful.
+
+
+# Areas of Research 
+
+## Industry Economics and Budget Allocation:
+
+- Investigate the relationship between movie budgets and their commercial success.
+- Examine factors that influence budget decisions, such as genre, star power, or director track records.
+- Analyze the return on investment for different budget ranges and how this has evolved over time.
+
+## Genre Analysis:
+
+- Perform a deeper analysis of genre trends, including changes in genre popularity over time.
+- Explore the correlation between movie genres and critical acclaim or audience ratings.
+- Assess the impact of genre on a movie's financial performance.
+
+## Rating Systems and Audience Preferences:
+
+- Analyze the distribution of movie ratings (e.g., R, PG-13) and their impact on box office performance.
+- Study audience demographics and preferences to understand the demand for different content ratings.
+- Evaluate the implications of rating systems on viewership and revenue in different markets.
+
+## Directorial Influence on Movie Success:
+
+- Investigate the role of directors in the success of movies, considering factors such as creative style, genre preference, and collaboration with actors.
+- Analyze the relationship between a director's experience and the critical and commercial performance of their movies.
+
+## Temporal and Seasonal Trends:
+
+- Explore how the timing of movie releases affects their performance, considering seasonal trends, holidays, and competition.
+- Research the evolution of cinematic trends over the decades, including technological advancements, narrative styles, and thematic focus.
+
+## Impact of Critic and User Reviews:
+
+- Assess how critic and user reviews influence box office revenue and long-term success.
+- Study the potential disparities between critic ratings and audience scores and their respective impacts on movie success.
+
+
+# Conclusion
+
+- The film industry has witnessed an upward trend in average movie budgets over time, reflecting an increased investment in film production. However, the count of movies produced annually has shown stability, indicating that while more funds are being allocated, the number of films being made has not significantly increased.
+
+
+- Genre analysis revealed specific preferences and trends within the industry. Certain genres are more prevalent, and there's a correlation between genres and the critical reception that could inform future production decisions.
+
+- The distribution of movie ratings has provided insights into the types of content being produced and their reception. It appears that certain ratings are more common, which could reflect both filmmakers' targeting of specific audience segments and the response of these segments to different content types.
+Directorial Impact:
+
+- Directors play a crucial role in a movie's success. Our analysis identified directors who consistently produce movies with high scores, suggesting that experienced and visionary directors are a significant asset to movie success.
+
+- The findings of this analysis have significant implications for various stakeholders in the film industry, including producers, directors, marketers, and investors. The trends and patterns uncovered could guide strategic decisions, from budget allocation to genre selection and release timing.
+Future Areas of Research:
+
+- The insights gained provide a foundation for numerous areas of further research, such as the economic impact of different budget levels, the evolution of genre popularity, and the influence of directors on film success.
+In conclusion, the EDA of the movies.csv dataset not only sheds light on historical trends within the film industry but also opens avenues for future research and strategy development. Understanding these patterns enables industry players to make informed decisions, potentially leading to more successful and financially viable movie productions.
+
+
+# Refrences
+
+- Create elegant data visualisations using the grammar of graphics. (n.d.). https://ggplot2.tidyverse.org/
+
+- Movie industry. (2021, July 23). Kaggle. https://www.kaggle.com/datasets/danielgrijalvas/movies
+
+- Mutha, T. (2024, February 21). EDA using Tidyverse (ggplot2) - Tirtha Mutha - Medium. Medium. https://medium.com/@tirthamutha/eda-using-tidyverse-i-b806a2c33ece
+
+- Östblom, J. (n.d.). Data wrangling and visualization in the tidyverse. https://uoftcoders.github.io/rcourse/lec04-dplyr.html
